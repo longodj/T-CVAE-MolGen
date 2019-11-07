@@ -123,3 +123,19 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# BitTorrent
+.rslc
+.rsls
+.rslsc
+.*.rslc
+
+# History
+.history
