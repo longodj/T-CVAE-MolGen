@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "/Users/icarus/anaconda3/envs/moses/bin/python"
+    "python.pythonPath": "/home/icarus/anaconda3/bin/python",
+    "python.dataScience.jupyterServerURI": "http://localhost:8888/?token=2f5581c7baf8d76c47bc4813caf451adad9e570c2c315f47"
 }
