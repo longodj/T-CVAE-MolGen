@@ -8,8 +8,8 @@ Code version: 4274301
 Availability: https://github.com/benatorc/PA-Graph-Transformer.git
 ******************************************************************
 """
-import numpy as np
 import rdkit.Chem as Chem
+import torch as torch
 
 # The default valid symbols for atom features
 SYMBOLS = ['C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg',
@@ -22,6 +22,8 @@ SYMBOLS = ['C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg',
 
 # The default valid formal charges for atom features
 FORMAL_CHARGES = [-2, -1, 0, 1, 2]
+
+CHIRAL_TAG = [0,1,2,3]
 
 # The default valid bond types for bond features
 BOND_TYPES = [
@@ -42,6 +44,7 @@ BT_MAPPING = {
 
 BT_MAPPING_INV = {v: k for k, v in BT_MAPPING.items()}
 
+BT_STEREO = [0,1,2,3,4,5]
 
 def bt_index_to_float(bt_index):
     bond_type = BOND_TYPES[bt_index]
@@ -56,8 +59,9 @@ EXPLICIT_VALENCES = [0, 1, 2, 3, 4, 5, 6]
 IMPLICIT_VALENCES = [0, 1, 2, 3, 4, 5]
 
 N_ATOM_FEATS = (len(SYMBOLS) + len(FORMAL_CHARGES) + len(DEGREES) +
-                len(EXPLICIT_VALENCES) + len(IMPLICIT_VALENCES) + 1)
-N_BOND_FEATS = len(BOND_TYPES) + 1 + 1
+                len(EXPLICIT_VALENCES) + len(IMPLICIT_VALENCES) + 
+                len(CHIRAL_TAG) + 1)
+N_BOND_FEATS = len(BOND_TYPES) + len(BT_STEREO) + 1 + 1
 
 
 def get_bt_index(bond_type):
@@ -85,21 +89,24 @@ def get_atom_features(atom):
     """Given an atom object, returns a numpy array of features."""
     # Atom features are symbol, formal charge, degree, explicit/implicit
     # valence, and aromaticity
+    symbol = onek_unk_encoding(atom.GetSymbol(), SYMBOLS)
 
-    if atom.is_dummy:
-        symbol = onek_unk_encoding(atom.symbol, SYMBOLS)
+    if False:  # atom.is_dummy:
         padding = [0] * (N_ATOM_FEATS - len(symbol))
         feature_array = symbol + padding
     else:
-        symbol = onek_unk_encoding(atom.symbol, SYMBOLS)
-        fc = onek_unk_encoding(atom.fc, FORMAL_CHARGES)
-        degree = onek_unk_encoding(atom.degree, DEGREES)
-        exp_valence = onek_unk_encoding(atom.exp_valence, EXPLICIT_VALENCES)
-        imp_valence = onek_unk_encoding(atom.imp_valence, IMPLICIT_VALENCES)
-        aro = [atom.aro]
+        aro = [atom.GetIsAromatic()]
+        chiral = onek_unk_encoding(int(atom.GetChiralTag()), CHIRAL_TAG)
+        degree = onek_unk_encoding(atom.GetDegree(), DEGREES)
+        exp_valence = onek_unk_encoding(atom.GetExplicitValence(), 
+                                        EXPLICIT_VALENCES)        
+        fc = onek_unk_encoding(atom.GetFormalCharge(), FORMAL_CHARGES)
+        imp_valence = onek_unk_encoding(atom.GetImplicitValence(), 
+                                        IMPLICIT_VALENCES)
 
-        feature_array = symbol + fc + degree + exp_valence + imp_valence + aro
-    return np.array(feature_array)
+        feature_array = symbol + aro + chiral + degree + exp_valence + \
+                        fc + imp_valence
+    return torch.Tensor(feature_array)
 
 
 def get_bond_features(bond, bt_only=False):
@@ -110,18 +117,21 @@ def get_bond_features(bond, bt_only=False):
     # Bond features are bond type, conjugacy, and ring-membership
     if bond is None:
         bond_type = onek_unk_encoding(None, BOND_TYPES)
+        stereo = [0]
         conj = [0]
         ring = [0]
     else:
-        bond_type = onek_unk_encoding(bond.bond_type, BOND_TYPES)
-        conj = [bond.is_conjugated]
-        ring = [bond.is_in_ring]
+        bond_type = onek_unk_encoding(bond.GetBondType(), BOND_TYPES)
+        stereo = [int(bond.GetStereo())]
+        fstereo = onek_unk_encoding(stereo, BT_STEREO)
+        conj = [bond.GetIsConjugated()]
+        ring = [bond.IsInRing()]
 
     if bt_only:
         feature_array = bond_type
-    else:
-        feature_array = bond_type + conj + ring
-    return np.array(feature_array)
+    else:   
+        feature_array = bond_type + fstereo + conj + ring
+    return torch.Tensor(feature_array)
 
 
 def get_bt_feature(bond_type):
@@ -136,10 +146,10 @@ def get_path_bond_feature(bond):
 
     When the given input is none, returns a 0-vector"""
     if bond is None:
-        return np.zeros(N_BOND_FEATS)
+        return torch.zeros(N_BOND_FEATS)
     else:
         bond_type = onek_unk_encoding(bond.GetBondType(), BOND_TYPES)
         conj = [int(bond.GetIsConjugated())]
         ring = [int(bond.IsInRing())]
 
-        return np.array(bond_type + conj + ring)
+        return torch.Tensor(bond_type + conj + ring)

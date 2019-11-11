@@ -22,3 +22,6 @@ class Vocab(object):
 
     def get_slots(self, idx):
         return copy.deepcopy(self.slots[idx])
+    
+    def size(self):
+        return len(self.vocab)

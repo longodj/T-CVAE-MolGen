@@ -6,7 +6,7 @@ import pytorch as torch
 import torch.nn as nn
 from typing import Tuple
 
-import graph.mol_features as mol_features
+from structures.mol_features import N_ATOM_FEATS, N_BOND_FEATS
 
 __author__ = "David Longo (longodj@gmail.com)"
 
@@ -25,8 +25,8 @@ class GraphConvNet(nn.Module):
         self.args = args
 
         """Message Passing Network."""
-        self.W_msg_i = nn.Linear(mol_features.N_ATOM_FEATS +
-                                 mol_features.N_BOND_FEATS,
+        self.W_msg_i = nn.Linear(N_ATOM_FEATS +
+                                 N_BOND_FEATS,
                                  args.hidden_size,
                                  bias=False)
         
@@ -44,7 +44,7 @@ class GraphConvNet(nn.Module):
                                      args.hidden_size, 
                                      bias=False)
         
-        self.W_msg_o = nn.Linear(mol_features.N_ATOM_FEATS + args.hidden_size,
+        self.W_msg_o = nn.Linear(N_ATOM_FEATS + args.hidden_size,
                                  args.hidden_size)
         
         """Dropout."""
@@ -63,10 +63,11 @@ class GraphConvNet(nn.Module):
                                     torch.Tensor,   # agraph
                                     torch.Tensor]   # bgraph
                 ) -> torch.Tensor:
-        fatoms, fbonds, agraph, bgraph = graph_inputs
         
+        fatoms, fbonds, agraph, bgraph = graph_inputs
+
         atom_input = torch.tensor(None)
         atom_input = self.dropout(atom_input)
-        
+
         atom_h = nn.ReLU()(self.W_message_o(atom_input))
         return atom_h

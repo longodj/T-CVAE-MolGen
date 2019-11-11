@@ -10,6 +10,7 @@ Availability: https://github.com/dmlc/dgl.git
 """
 
 import numpy as np
+import torch as torch
 
 from dgl import DGLGraph
 from rdkit import Chem
@@ -17,6 +18,8 @@ from rdkit import Chem
 from utils.chemutils import get_clique_mol, tree_decomp, get_mol, get_smiles, \
                             set_atommap, enum_assemble_nx, decode_stereo
 
+from .mol_features import get_atom_features, get_bond_features
+from .vocab import Vocab
 
 class MolTree(DGLGraph):
     def __init__(self, smiles):
@@ -30,6 +33,7 @@ class MolTree(DGLGraph):
 
         """Stereo Generation."""
         mol = Chem.MolFromSmiles(smiles)
+        
         self.smiles2D = Chem.MolToSmiles(mol)
         self.smiles3D = Chem.MolToSmiles(mol, isomericSmiles=True)
         self.stereo_cands = decode_stereo(self.smiles2D)
@@ -133,3 +137,53 @@ class MolTree(DGLGraph):
     def assemble(self):
         for node in self.nodes_dict:
             self._assemble_node(node)
+            
+    def encode(self, recssemble=False, vocab=None):
+        if recssemble:
+            self.recover()
+            self.assemble()
+        
+        wid = None
+        if vocab is not None:
+            wid = self._set_node_id(self, vocab)
+        
+        n_edges = 0
+
+        atom_x, bond_x = [], []
+
+        n_atoms, n_bonds = self.mol.GetNumAtoms(), self.mol.GetNumBonds()
+        graph = DGLGraph()
+        for i, atom in enumerate(self.mol.GetAtoms()):
+            assert i == atom.GetIdx()
+            atom_x.append(get_atom_features(atom))
+        graph.add_nodes(n_atoms)
+
+        bond_src, bond_dst = [], []
+        for i, bond in enumerate(self.mol.GetBonds()):
+            begin_idx, end_idx = bond.GetBeginAtom().GetIdx(), \
+                                 bond.GetEndAtom().GetIdx()
+            features = get_bond_features(bond)
+            bond_src.append(begin_idx)
+            bond_dst.append(end_idx)
+            bond_x.append(features)
+            # set up the reverse direction
+            bond_src.append(end_idx)
+            bond_dst.append(begin_idx)
+            bond_x.append(features)
+        graph.add_edges(bond_src, bond_dst)
+
+        n_edges += n_bonds
+        result = graph, \
+            torch.stack(atom_x), \
+            torch.stack(bond_x) if len(bond_x) > 0 else torch.zeros(0), \
+            wid
+        return result if vocab else result[0:3] 
+                
+    @staticmethod
+    def _set_node_id(mol_tree, vocab: Vocab):
+        wid = []
+        for i, node in enumerate(mol_tree.nodes_dict):
+            mol_tree.nodes_dict[node]['idx'] = i
+            wid.append(vocab.get_index(mol_tree.nodes_dict[node]['smiles']))
+
+        return wid
