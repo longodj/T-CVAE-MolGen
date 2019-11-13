@@ -1,16 +1,19 @@
 FROM nvidia/cuda:10.1-cudnn7-runtime-ubuntu16.04
 
-LABEL maintainer="pughdr <david.pugh@kaust.edu.sa>"
+LABEL maintainer="longodj <longodj@gmail.com>"
 
 SHELL [ "/bin/bash", "-c" ]
+
+COPY requirements.system /tmp/requirements.system
 
 RUN apt-get update --fix-missing && \
     apt-get install -y wget bzip2 curl git && \
     apt-get clean && \
+    cat /tmp/requirements.system | xargs apt-get install -y && \
     rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user
-ARG username=al-khawarizmi
+ARG username=icarus
 ARG uid=1000
 ARG gid=100
 ENV USER ${username}
@@ -33,10 +36,13 @@ COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chown $UID:$GID /usr/local/bin/docker-entrypoint.sh && \
     chmod +x /usr/local/bin/docker-entrypoint.sh
 
+COPY dgl /tmp/dgl
+RUN chown -R $UID:$GID /tmp/dgl
+
 # install Miniconda as non-root user
 USER $USER
 
-ENV MINICONDA_VERSION 4.7.12
+ENV MINICONDA_VERSION latest
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Linux-x86_64.sh -O ~/miniconda.sh && \
     chmod +x ~/miniconda.sh && \
     ~/miniconda.sh -b && \
@@ -49,6 +55,12 @@ WORKDIR $HOME/app
 RUN ~/miniconda3/bin/conda update --name base --channel defaults conda && \
     ~/miniconda3/bin/conda env create --prefix ./env --file /tmp/environment.yml && \
     ~/miniconda3/bin/conda clean --all --yes
+
+
+WORKDIR /tmp/dgl/python
+RUN ~/app/env/bin/python setup.py install
+
+WORKDIR $HOME/app
 
 # use an entrypoint script to insure conda environment is properly activated at runtime
 ENTRYPOINT [ "/usr/local/bin/docker-entrypoint.sh" ]

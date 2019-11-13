@@ -1,4 +1,5 @@
 {
-    "python.pythonPath": "/home/icarus/anaconda3/bin/python",
-    "python.dataScience.jupyterServerURI": "http://localhost:8888/?token=2f5581c7baf8d76c47bc4813caf451adad9e570c2c315f47"
+    "python.pythonPath": "/home/icarus/anaconda3/envs/tcvaemolgen/bin/python",
+    "python.dataScience.jupyterServerURI": "http://localhost:8888/?token=2f5581c7baf8d76c47bc4813caf451adad9e570c2c315f47",
+    "python.formatting.autopep8Path": "/home/icarus/anaconda3/envs/tcvaemolgen/bin/autopep8"
 }

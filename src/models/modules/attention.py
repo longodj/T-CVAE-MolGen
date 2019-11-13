@@ -2,7 +2,7 @@
 """
 import argparse
 import numpy as np
-import pytorch as torch
+import torch as torch
 import torch.nn as nn
 from typing import Tuple
 
