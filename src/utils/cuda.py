@@ -6,7 +6,7 @@ import os
 def cuda(tensor: torch.Tensor, args=None):
     if args is not None:
         if args.use_cuda or torch.cuda.is_available():
-            return tensor.to(args.device)
+            return tensor.cuda()
     else:
         if torch.cuda.is_available():
             return tensor.cuda()

@@ -139,3 +139,6 @@ dmypy.json
 
 # History
 .history
+
+# APM (NewRelic)
+newrelic.ini

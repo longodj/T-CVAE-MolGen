@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from structures.moltree import MolTree as DGLMolTree
+from structures.moltree import MolTree
 from utils.chem import enum_assemble_nx, get_mol
-from utils.cuda import GRUUpdate, cuda
+from utils.cuda import GRUUpdate, cuda, move_dgl_to_cuda
 from dgl import batch, dfs_labeled_edges_generator
 import dgl.function as DGLF
 import numpy as np
+import time
 
 MAX_DECODE_LEN = 100
 
@@ -105,23 +106,28 @@ class DGLJTNNDecoder(nn.Module):
         ground truth tree
         '''
         mol_tree_batch = batch(mol_trees)
+        move_dgl_to_cuda(mol_tree_batch)
         mol_tree_batch_lg = mol_tree_batch.line_graph(backtracking=False, shared=True)
         n_trees = len(mol_trees)
 
         return self.run(mol_tree_batch, mol_tree_batch_lg, n_trees, tree_vec)
 
     def run(self, mol_tree_batch, mol_tree_batch_lg, n_trees, tree_vec):
+        times = []
+        times.append((116,time.time()))
         node_offset = np.cumsum([0] + mol_tree_batch.batch_num_nodes)
         root_ids = node_offset[:-1]
         n_nodes = mol_tree_batch.number_of_nodes()
         n_edges = mol_tree_batch.number_of_edges()
 
+        times.append((122,time.time()))
         mol_tree_batch.ndata.update({
             'x': self.embedding(mol_tree_batch.ndata['wid']),
             'h': torch.cuda.FloatTensor(n_nodes, self.hidden_size).fill_(0),
             'new': torch.cuda.ByteTensor(n_nodes).fill_(1)  # whether it's newly generated node
         })
 
+        times.append((129,time.time()))
         mol_tree_batch.edata.update({
             's': torch.cuda.FloatTensor(n_edges, self.hidden_size).fill_(0),
             'm': torch.cuda.FloatTensor(n_edges, self.hidden_size).fill_(0),
@@ -133,6 +139,7 @@ class DGLJTNNDecoder(nn.Module):
             'accum_rm': torch.cuda.FloatTensor(n_edges, self.hidden_size).fill_(0)
         })
 
+        times.append((141,time.time()))
         mol_tree_batch.apply_edges(
             func=lambda edges: {'src_x': edges.src['x'], 'dst_x': edges.dst['x']},
         )
@@ -143,6 +150,7 @@ class DGLJTNNDecoder(nn.Module):
         q_inputs = []
         q_targets = []
 
+        times.append((152,time.time()))
         # Predict root
         mol_tree_batch.pull(
             root_ids,
@@ -150,26 +158,29 @@ class DGLJTNNDecoder(nn.Module):
             dec_tree_node_reduce,
             dec_tree_node_update,
         )
+        
+        times.append((161,time.time()))
         # Extract hidden states and store them for stop/label prediction
         h = mol_tree_batch.nodes[root_ids].data['h']
         x = mol_tree_batch.nodes[root_ids].data['x']
         p_inputs.append(torch.cat([x, h, tree_vec], 1))
         # If the out degree is 0 we don't generate any edges at all
-        root_out_degrees = mol_tree_batch.out_degrees(root_ids)
+        root_out_degrees = mol_tree_batch.out_degrees(root_ids).cuda()
         q_inputs.append(torch.cat([h, tree_vec], 1))
         q_targets.append(mol_tree_batch.nodes[root_ids].data['wid'])
 
+        times.append((171,time.time()))
         # Traverse the tree and predict on children
         for eid, p in dfs_order(mol_tree_batch, root_ids):
             u, v = mol_tree_batch.find_edges(eid)
-
-            p_target_list = torch.zeros_like(root_out_degrees)
-            p_target_list[root_out_degrees > 0] = 1 - p
+            
+            p_target_list = torch.cuda.LongTensor(root_out_degrees.shape).fill_(0)
+            p_target_list[root_out_degrees > 0] = 1 - p.cuda()
             p_target_list = p_target_list[root_out_degrees >= 0]
-            p_targets.append(torch.tensor(p_target_list))
+            p_targets.append(torch.tensor(p_target_list).cuda())
 
-            root_out_degrees -= (root_out_degrees == 0).long()
-            root_out_degrees -= torch.tensor(np.isin(root_ids, v).astype('int64'))
+            root_out_degrees -= (root_out_degrees == 0).long().cuda()
+            root_out_degrees -= torch.tensor(np.isin(root_ids, v).astype('int64')).cuda()
 
             mol_tree_batch_lg.pull(
                 eid,
@@ -199,17 +210,20 @@ class DGLJTNNDecoder(nn.Module):
             if q_input.shape[0] > 0:
                 q_inputs.append(q_input)
                 q_targets.append(q_target)
-        p_targets.append(torch.zeros((root_out_degrees == 0).sum()).long())
+        p_targets.append(torch.zeros((root_out_degrees == 0).sum()).long().cuda())
 
+        times.append((214,time.time()))
         # Batch compute the stop/label prediction losses
         p_inputs = torch.cat(p_inputs, 0)
         p_targets = cuda(torch.cat(p_targets, 0))
         q_inputs = torch.cat(q_inputs, 0)
         q_targets = torch.cat(q_targets, 0)
 
+        times.append((221,time.time()))
         q = self.W_o(torch.relu(self.W(q_inputs)))
         p = self.U_s(torch.relu(self.U(p_inputs)))[:, 0]
 
+        times.append((225,time.time()))
         p_loss = F.binary_cross_entropy_with_logits(
             p, p_targets.float(), size_average=False
         ) / n_trees
@@ -217,21 +231,27 @@ class DGLJTNNDecoder(nn.Module):
         p_acc = ((p > 0).long() == p_targets).sum().float() / p_targets.shape[0]
         q_acc = (q.max(1)[1] == q_targets).float().sum() / q_targets.shape[0]
 
+        times.append((233,time.time()))
         self.q_inputs = q_inputs
         self.q_targets = q_targets
         self.q = q
-        self.p_inputs = p_inputs
+        self.p_inputs =  p_inputs
         self.p_targets = p_targets
         self.p = p
+        
+        #print("Dec Profile:")
+        #for i in range(len(times)-1):
+        #    print("\t%d: %f" % (times[i][0], 
+        #                        times[i+1][1]-times[i][1]))
 
         return q_loss, p_loss, q_acc, p_acc
 
     def decode(self, mol_vec):
         assert mol_vec.shape[0] == 1
 
-        mol_tree = DGLMolTree(None)
+        mol_tree = MolTree(None) 
 
-        init_hidden = cuda(torch.zeros(1, self.hidden_size))
+        init_hidden = torch.cuda.FloatTensor(1, self.hidden_size).fill_(0)
 
         root_hidden = torch.cat([init_hidden, mol_vec], 1)
         root_hidden = F.relu(self.W(root_hidden))

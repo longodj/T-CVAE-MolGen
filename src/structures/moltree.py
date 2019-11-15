@@ -24,10 +24,10 @@ from .vocab import Vocab
 class MolTree(DGLGraph):
     def __init__(self, smiles):
         DGLGraph.__init__(self)
+        self.nodes_dict = {}
+        
         if smiles is None:
             return
-
-        self.nodes_dict = {}
         self.smiles = smiles
         self.mol = get_mol(smiles)
 
@@ -166,7 +166,7 @@ class MolTree(DGLGraph):
             bond_src.append(begin_idx)
             bond_dst.append(end_idx)
             bond_x.append(features)
-            # set up the reverse direction
+            # set up the reverse direction 
             bond_src.append(end_idx)
             bond_dst.append(begin_idx)
             bond_x.append(features)

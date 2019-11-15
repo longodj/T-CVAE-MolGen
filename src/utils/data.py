@@ -15,7 +15,11 @@ from models.modules.gcn import mol2dgl_enc
 _url = 'https://s3-ap-southeast-1.amazonaws.com/dgl-data-cn/dataset/jtnn.zip'
 
 def _unpack_field(examples, field):
-    return [e[field] for e in examples]
+    try:
+        retval = [e[field] for e in examples]
+    except KeyError:
+        retval = None
+    return retval
 
 def mol2dgl_dec(cand_batch: List[Tuple[Chem.rdchem.Mol, 
                 MolTree, int]]):
@@ -109,7 +113,10 @@ class JTNNCollator(object):
     def __call__(self, examples):
         # get list of trees
         mol_trees = _unpack_field(examples, 'mol_tree')
-        smiles = _unpack_field(examples, 'smiles')
+        #try:
+        #    smiles = _unpack_field(examples, 'smiles')
+        #except KeyError:
+        #    smiles = None
         wid = _unpack_field(examples, 'wid')
         for _wid, mol_tree in zip(wid, mol_trees):
             mol_tree.ndata['wid'] = torch.LongTensor(_wid)
@@ -182,7 +189,7 @@ class JTNNCollator(object):
             'tree_mess_tgt_e': tree_mess_tgt_e,
             'tree_mess_src_e': tree_mess_src_e,
             'tree_mess_tgt_n': tree_mess_tgt_n,
-            'smiles': smiles,
+            #'smiles': smiles,
             'stereo_cand_graph_batch': stereo_cand_graph_batch,
             'stereo_cand_batch_idx': stereo_cand_batch_idx,
             'stereo_cand_labels': stereo_cand_labels,
@@ -343,11 +350,11 @@ class JTNNDataset(Dataset):
             'stereo_cand_label': stereo_cand_label,
             'smiles': smiles
             })
-        
+        """
         if self.intermediates:
             result.update({
                 'smiles_img': smile_img,
                 'img_grid': img_grid
             })
-
+"""
         return result

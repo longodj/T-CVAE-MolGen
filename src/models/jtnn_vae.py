@@ -22,17 +22,22 @@ class DGLJTNNVAE(nn.Module):
 
     def __init__(self, vocab, hidden_size, latent_size, depth, args=None):
         super(DGLJTNNVAE, self).__init__()
-        self.vocab = vocab
-        self.hidden_size = hidden_size
-        self.latent_size = latent_size
         self.depth = depth
         self.device = args.device
+        self.hidden_size = hidden_size
+        self.latent_size = latent_size
+        self.vocab = vocab
 
+        print("Initializing Embedding")
         self.embedding = nn.Embedding(vocab.size(), hidden_size).cuda()
+        print("Initializing MPN")
         self.mpn = DGLMPN(args)
+        print("Initializing JTNN")
         self.jtnn = DGLJTNNEncoder(vocab, hidden_size, self.embedding)
+        print("Initializing Decoder")
         self.decoder = DGLJTNNDecoder(
                 vocab, hidden_size, latent_size // 2, self.embedding)
+        print("Initializing JTMPN")
         self.jtmpn = DGLJTMPN(hidden_size, depth)
 
         self.T_mean = nn.Linear(hidden_size, latent_size // 2).cuda()

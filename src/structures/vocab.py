@@ -1,3 +1,4 @@
+import copy
 from rdkit import Chem
 from typing import List,Tuple
 

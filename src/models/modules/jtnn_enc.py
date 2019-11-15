@@ -8,11 +8,14 @@ import numpy as np
 MAX_NB = 8
 
 def level_order(forest, roots):
-    edges = bfs_edges_generator(forest, roots)
-    _, leaves = forest.find_edges(edges[-1])
-    edges_back = bfs_edges_generator(forest, roots, reverse=True)
-    yield from reversed(edges_back)
-    yield from edges
+    try:
+        edges = bfs_edges_generator(forest, roots)
+        _, leaves = forest.find_edges(edges[-1])
+        edges_back = bfs_edges_generator(forest, roots, reverse=True)
+        yield from reversed(edges_back)
+        yield from edges
+    except:
+        return None
 
 enc_tree_msg = [DGLF.copy_src(src='m', out='m'), DGLF.copy_src(src='rm', out='rm')]
 enc_tree_reduce = [DGLF.sum(msg='m', out='s'), DGLF.sum(msg='rm', out='accum_rm')]
@@ -27,8 +30,12 @@ class EncoderGatherUpdate(nn.Module):
         self.W = nn.Linear(2 * hidden_size, hidden_size).cuda()
 
     def forward(self, nodes):
+        #print(nodes.data.keys() )
         x = nodes.data['x']
-        m = nodes.data['m']
+        try:
+            m = nodes.data['m']
+        except:
+            m = torch.cuda.FloatTensor(1, self.hidden_size).fill_(0)
         return {
             'h': cuda(torch.relu(self.W(cuda(torch.cat([x, m], 1))))),
         }
